@@ -1,3 +1,6 @@
+# Exclude Data folder from Git
+/Data
+
 # History files
 .Rhistory
 .Rapp.history
