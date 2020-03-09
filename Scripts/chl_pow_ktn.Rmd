@@ -1,0 +1,241 @@
+---
+title: "chl_pow_ktn"
+author: "Lia Domke"
+date: "3/2/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+In chlorophyll_exploration.Rmd, we looked at average chlorophyll values across all years and all months and visualized that on ggplot maps. Additionally, we looked at timeseries of the data and the distinct peaks and valleys by month over the years that the satellites were functioning. 
+We determined that VIIRS satellite is the only satellite that has enough resolution to look at the inside waters of POW and the Revelligdeo area. 
+
+Now we want to define two seperate regions ('POW' and 'KTN') 
+
+# 1. POW region
+```{r}
+xcoord.p <- c(-132.3, -133.5)
+ycoord.p <- c(54.5, 56.5)
+
+##Format Box Coordinates for cosmetics, to make a nice map title
+ttext.p <-paste(paste(abs(xcoord.p), collapse="-"),"W, ", paste(ycoord.p, collapse="-"),"N")
+```
+
+# 2. KTN region
+```{r}
+xcoord.k <- c(-131.1, 132.2)
+ycoord.k <- c(54.5, 56.5)
+
+##Format Box Coordinates for cosmetics, to make a nice map title
+ttext.k <-paste(paste(abs(xcoord.k), collapse="-"),"W, ", paste(ycoord.k, collapse="-"),"N")
+```
+
+# 3. Install packages
+```{r}
+pkgTest <- function(x)
+{
+  if (!require(x,character.only = TRUE))
+  {
+    install.packages(x,dep=TRUE)
+    if(!require(x,character.only = TRUE)) stop(x, " :Package not found")
+  }
+}
+
+# create list of required packages
+list.of.packages <- c("ncdf4","parsedate","rerddap","plotdap","sp","rerddapXtracto","lubridate", "maps","cmocean",
+                       "mapdata", "maptools", "mapproj", 
+                       "reshape2", "colorRamps", "plyr", "ggplot2", "gridExtra")
+
+# create list of installed packages
+pkges = installed.packages()[,"Package"]
+
+for (pk in list.of.packages) {
+  pkgTest(pk)
+}
+
+library(ncdf4)
+library(parsedate)
+library(rerddap)
+library(plotdap)
+library(sp)
+library(rerddapXtracto)
+library(lubridate)
+library(maps)
+library(cmocean)
+library(mapdata)
+library(mapproj)
+library(reshape2)
+library(colorRamps)
+library(plyr)
+library(ggplot2)
+library(gridExtra)
+```
+
+# 4. Download VIIRS
+Satellite data that spans 2012 - current
+```{r}
+# Use rerddap to get information about the dataset
+# if you encouter an error reading the nc file clear the rerrdap cache: 
+# rerddap::cache_delete_all(force = TRUE)
+dataInfo <- rerddap::info('nesdisVHNSQchlaMonthly')
+#dataInfo <- rerddap::info('erdVHNchlamday')  # alternate dataset to use
+dataInfo
+```
+
+# 4.1 Extract VIIRS for POW
+```{r}
+## This extracts the parameter name from the metadata in dataInfo
+parameter <- dataInfo$variable$variable_name
+
+#Extract the start and end times of the dataset from the metadata in dataInfo
+global <- dataInfo$alldata$NC_GLOBAL
+
+# Populate the time vector with the time_coverage_start from dataInfo
+# Use the "last" option for the ending date
+tt <- global[ global$attribute_name %in% c('time_coverage_end','time_coverage_start'), "value", ]
+tcoord <- c(tt[2],"last")
+#tcoord <- c(tt[1], tt[2])
+
+# Run rxtracto_3D
+chlVIIRS.p <-rxtracto_3D(dataInfo,parameter=parameter,
+                      tcoord=tcoord,
+                      xcoord=xcoord.p,ycoord=ycoord.p,zcoord=zcoord)
+
+## Remove extraneous zcoord dimension for chlorophyll 
+chlVIIRS.p$chlor_a <- drop(chlVIIRS.p$chlor_a)
+#chlVIIRS$chla <- drop(chlVIIRS$chla)
+```
+
+# 4.2 Extract VIIRS for KTN
+
+```{r}
+## This extracts the parameter name from the metadata in dataInfo
+parameter <- dataInfo$variable$variable_name
+
+#Extract the start and end times of the dataset from the metadata in dataInfo
+global <- dataInfo$alldata$NC_GLOBAL
+
+# Populate the time vector with the time_coverage_start from dataInfo
+# Use the "last" option for the ending date
+tt <- global[ global$attribute_name %in% c('time_coverage_end','time_coverage_start'), "value", ]
+tcoord <- c(tt[2],"last")
+#tcoord <- c(tt[1], tt[2])
+
+# Run rxtracto_3D
+chlVIIRS.k <-rxtracto_3D(dataInfo,parameter=parameter,
+                      tcoord=tcoord,
+                      xcoord=xcoord.k ,ycoord=ycoord.k ,zcoord=zcoord)
+
+## Remove extraneous zcoord dimension for chlorophyll 
+chlVIIRS.k$chlor_a <- drop(chlVIIRS.k$chlor_a)
+#chlVIIRS$chla <- drop(chlVIIRS$chla)
+```
+
+# 5. Plot timeseries
+# 5.1 Average by month by region 
+
+```{r}
+# Prince of Wales area
+chlVIIRS.p$avg <- apply(chlVIIRS.p$chlor_a, c(3),function(x) mean(x,na.rm=TRUE))
+chlVIIRS.p$sd <- apply(chlVIIRS.p$chlor_a, c(3), function(x) sd(x, na.rm = TRUE))
+
+# Ketchikan area
+chlVIIRS.k$avg <- apply(chlVIIRS.k$chlor_a, c(3),function(x) mean(x,na.rm=TRUE))
+chlVIIRS.k$sd <- apply(chlVIIRS.k$chlor_a, c(3), function(x) sd(x, na.rm = TRUE))
+
+# average over the mapping area and over years
+chlVIIRS.p$avgmap <- apply(chlVIIRS.p$chlor_a,c(1,2),function(x) mean(x,na.rm=TRUE))
+chlVIIRS.k$avgmap <- apply(chlVIIRS.k$chlor_a,c(1,2),function(x) mean(x, na.rm = TRUE))
+
+```
+
+
+```{r}
+plot(as.Date(chlVIIRS.p$time), chlVIIRS.p$avg, 
+     type='b', bg="blue", pch=21, xlab="", cex=.7,
+     xlim=as.Date(c("2012-01-01","2019-01-01")),
+     ylim=c(-10,20),
+     ylab="Chlorophyll (mg3)", main = "Average chlorophyll by month")
+#axis(2)
+
+# add in ktn area and sd bars
+#points(as.Date(chlVIIRS.k$time), chlVIIRS.k$avg, type='b', bg="darkgreen", pch=21,cex=.7)
+arrows(as.Date(chlVIIRS.p$time), chlVIIRS.p$avg-chlVIIRS.p$sd, as.Date(chlVIIRS.p$time), chlVIIRS.p$avg+chlVIIRS.p$sd, length=0.05, angle=90, code=3)
+#arrows(as.Date(chlVIIRS.k$time), chlVIIRS.k$avg-chlVIIRS.k$sd, as.Date(chlVIIRS.k$time), chlVIIRS.k$avg+chlVIIRS.k$sd, length=0.05, angle=90, code=3)
+
+# add in text lengend
+#text(as.Date("2012-03-01"),15, "POW region",col="blue", pos=4)
+#text(as.Date("2012-03-01"),14, "KTN region",col="darkgreen", pos=4)
+
+```
+
+# 5.2 Timeseries in ggplot
+```{r}
+chl1 <- data.frame(x = as.Date(chlVIIRS.p$time))
+chl1$avg <- chlVIIRS.p$avg
+chl1$sd <- chlVIIRS.p$sd
+chl1$region <- "POW"
+
+chl2 <- data.frame(x = as.Date(chlVIIRS.k$time))
+chl2$avg <- chlVIIRS.k$avg
+chl2$sd <- chlVIIRS.k$sd
+chl2$region <- "KTN"
+
+chl <- bind_rows(chl1, chl2)
+
+ggplot(data = chl, mapping = aes(x = x, y = avg, colour = region)) + 
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = avg - sd, ymax = avg + sd, color = region ,width=0.2))
+```
+
+
+# 6. Plot map of avg overall chl
+
+```{r}
+# Put arrays into format for ggplot
+melt_map <- function(lon,lat,var) {
+  dimnames(var) <-list(Longitude=lon, Latitude=lat)
+  ret <- melt(var,value.name="Chl")
+}
+
+# Loop for making 4 maps
+datasetnames <- c("POW","KTN")
+ak <- map_data("world2Hires", "USA:alaska")
+
+plot_list = list()
+
+for(i in 1:2) {
+  
+  if(i == 1) chl3 <- chlVIIRS.p
+  if(i == 2) chl3 <- chlVIIRS.k
+  
+   chlmap <- melt_map(chl3$longitude, chl3$latitude, chl3$avgmap)
+
+   p = ggplot(
+     data = chlmap, 
+     aes(x = Longitude, y = Latitude, fill = log10(Chl))) +
+         geom_tile(na.rm=T) +
+         geom_polygon(data = ak, aes(x=long, y = lat, group = group), fill = "grey80") +
+         theme_bw(base_size = 12) + ylab("Latitude") + xlab("Longitude") +
+         coord_fixed(1.3, xlim = xcoord, ylim = ycoord) +
+         scale_fill_gradientn(colours = cmocean('algae')(9), 
+                              na.value = NA, limits=c(-1,1)) +
+         ggtitle(paste("Average", datasetnames[i])
+      ) 
+
+  plot_list[[i]] = p
+}
+
+# Now print out maps into a png file.  Can't use par function with **ggplpot** to get 
+# multiple plots per page.  Here using a function in the **gridExtra** package
+
+#png(file="CHL_averagemaps.png")
+library(grid)
+grid.arrange(plot_list[[1]],plot_list[[2]], nrow = 1)
+
+# dev.off # if you'd like to write the figures to a png
+```
+
