@@ -205,8 +205,8 @@ text(as.Date("1997-03-01"),5, "VIIRS",col="black", pos=4)
 # name and the presence or absence of an altitude field) is cumbersome.  ESA makes 
 # a "mission-less" product, which seemlessly integrates data from all these sensors 
 # into one.  So lets redo this exercise using this dateset instead and compare the results.  
-
-dataInfo <- rerddap::info('pmlEsaCCI41OceanColorMonthly')
+rerddap::cache_delete_all(force = TRUE)
+dataInfo <- rerddap::info('pmlEsaCCI31OceanColorMonthly')
 
 # This identifies the parameter to choose - there are > 60 in this dataset1 
 parameter <- 'chlor_a'
@@ -215,7 +215,7 @@ global <- dataInfo$alldata$NC_GLOBAL
 tt <- global[ global$attribute_name %in% c('time_coverage_end','time_coverage_start'), "value", ]
 tcoord <- c(tt[2],"last")
 # if you encouter an error reading the nc file clear the rerrdap cache: 
-rerddap::cache_delete_all(force = TRUE)
+
 
 chlOCCCI<-rxtracto_3D(dataInfo,parameter=parameter,
                       tcoord=tcoord,
@@ -234,7 +234,7 @@ Add ESA OCCI data to the plot
 plot(as.Date(chlSeaWiFS$time), chlSeaWiFS$avg, 
      type='b', bg="blue", pch=21, xlab="", cex=.7,
      xlim=as.Date(c("1997-01-01","2019-01-01")),
-     ylim=c(0,3),
+     ylim=c(0, 10),
      ylab="Chlorophyll", main=ttext)
 #axis(2)
 
@@ -243,10 +243,10 @@ points(as.Date(chlMODIS$time), chlMODIS$avg, type='b', bg="red", pch=21,cex=.7)
 points(as.Date(chlVIIRS$time), chlVIIRS$avg, type='b', bg="black", pch=21,cex=.7)
 points(as.Date(chlOCCCI$time), chlOCCCI$avg, type='b', bg="green", pch=21,cex=.5)
 ## Add text annotation for legend
-text(as.Date("1997-03-01"),2.8, "SeaWiFS",col="blue", pos=4)
-text(as.Date("1997-03-01"),2.5, "MODIS",col="red", pos=4)
-text(as.Date("1997-03-01"),2.2, "VIIRS",col="black", pos=4)
-text(as.Date("1997-03-01"),1.9, "OC-CCI",col="green", pos=4)
+text(as.Date("1997-03-01"),4, "SeaWiFS",col="blue", pos=4)
+text(as.Date("1997-03-01"),4.5, "MODIS",col="red", pos=4)
+text(as.Date("1997-03-01"),5.0, "VIIRS",col="black", pos=4)
+text(as.Date("1997-03-01"),5.5, "OC-CCI",col="green", pos=4)
 
 #dev.off() # This closes the png file if its been written to 
 ```
@@ -263,6 +263,7 @@ melt_map <- function(lon,lat,var) {
 
 # Loop for making 4 maps
 datasetnames <- c("SeaWiFS","MODIS","VIIRS","OC-CCI")
+ak <- map_data("world2Hires", "USA:alaska")
 
 plot_list = list()
 
@@ -279,9 +280,9 @@ for(i in 1:4) {
      data = chlmap, 
      aes(x = Longitude, y = Latitude, fill = log10(Chl))) +
          geom_tile(na.rm=T) +
-         geom_polygon(data = coast, aes(x=long, y = lat, group = group), fill = "grey80") +
+         geom_polygon(data = ak, aes(x=long, y = lat, group = group), fill = "grey80") +
          theme_bw(base_size = 12) + ylab("Latitude") + xlab("Longitude") +
-         coord_fixed(1.3, xlim = c(-120,-116), ylim = ycoord) +
+         coord_fixed(1.3, xlim = xcoord, ylim = ycoord) +
          scale_fill_gradientn(colours = rev(rainbow(12)), 
                               na.value = NA, limits=c(-1,1)) +
          ggtitle(paste("Average", datasetnames[i])
@@ -353,16 +354,25 @@ grid.arrange(plot_list[[1]],plot_list[[2]],plot_list[[3]], nrow = 2)
 The rainbow palette creates a visual bias of the data. Use a different colour palette called *cmocean*
 
 ```{r}
+
+# Put arrays into format for ggplot
+melt_map <- function(lon,lat,var) {
+  dimnames(var) <-list(Longitude=lon, Latitude=lat)
+  ret <- melt(var,value.name="Chl")
+}
+
 # Loop for making 4 maps
-datasetnames <- c("SeaWiFS","MODIS","VIIRS")
+datasetnames <- c("SeaWiFS","MODIS","VIIRS","OC-CCI")
+ak <- map_data("world2Hires", "USA:alaska")
 
 plot_list = list()
 
-for(i in 1:3) {
+for(i in 1:4) {
   
   if(i == 1) chl <- chlSeaWiFS
   if(i == 2) chl <- chlMODIS
   if(i == 3) chl <- chlVIIRS
+  if(i == 4) chl <- chlOCCCI
   
    chlmap <- melt_map(chl$longitude, chl$latitude, chl$avgmap)
 
@@ -373,7 +383,7 @@ for(i in 1:3) {
          geom_polygon(data = ak, aes(x=long, y = lat, group = group), fill = "grey80") +
          theme_bw(base_size = 12) + ylab("Latitude") + xlab("Longitude") +
          coord_fixed(1.3, xlim = xcoord, ylim = ycoord) +
-         scale_fill_gradientn(colours =cmocean('algae')(9), 
+         scale_fill_gradientn(colours = cmocean('algae')(9), 
                               na.value = NA, limits=c(-1,1)) +
          ggtitle(paste("Average", datasetnames[i])
       ) 
@@ -384,11 +394,12 @@ for(i in 1:3) {
 # Now print out maps into a png file.  Can't use par function with **ggplpot** to get 
 # multiple plots per page.  Here using a function in the **gridExtra** package
 
-#png(file="CHL_averagemaps.png")
+png(file="CHL_averagemaps.png")
 library(grid)
-grid.arrange(plot_list[[1]],plot_list[[2]],plot_list[[3]], nrow = 2)
+grid.arrange(plot_list[[1]],plot_list[[2]],plot_list[[3]],plot_list[[4]], nrow = 2)
 
-# dev.off # if you're writing out to a png 
+ dev.off # if you'd like to write the figures to a png
+
 ```
 
 ## visualize VIDRIS data only 
@@ -428,9 +439,14 @@ glimpse(chlVIIRS)
 
 df1 <- data.frame(chlVIIRS$avg)
 df1$date <- chlVIIRS$date
+df1$Month_Yr <- format(as.Date(df1$date), "%Y-%m")
 
 
-ggplot(df1) +
-  geom_point(mapping = aes(x = date, y = chlVIIRS.avg))
+ggplot(data = df1, mapping = aes(x = Month_Yr, y = chlVIIRS.avg, group = 1)) +
+  geom_line(stat = "identity") +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), text = element_text(size = 12))
+
 ```
+
 
